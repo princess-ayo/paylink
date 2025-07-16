@@ -649,3 +649,72 @@
     )
   )
 )
+
+;; Fulfill a payment tag
+(define-public (fulfill-payment-tag (tag-id uint))
+  (let ((tag-data (unwrap! (map-get? payment-tags { id: tag-id }) (err ERR-NOT-FOUND))))
+    (begin
+      ;; Contract state checks
+      (asserts! (not (var-get contract-paused)) (err ERR-UNAUTHORIZED))
+      ;; Input validation
+      (asserts! (> tag-id u0) (err ERR-INVALID-AMOUNT))
+      (asserts! (<= tag-id (var-get tag-counter)) (err ERR-NOT-FOUND))
+      ;; Tag state validation
+      (asserts! (is-eq (get state tag-data) STATE-PENDING) (err ERR-NOT-PENDING))
+      (asserts! (< stacks-block-height (get expires-at tag-data))
+        (err ERR-EXPIRED)
+      )
+      ;; Execute sBTC transfer
+      (try! (contract-call? SBTC-CONTRACT transfer (get amount tag-data) tx-sender
+        (get recipient tag-data) none
+      ))
+      ;; Update tag state
+      (map-set payment-tags { id: tag-id }
+        (merge tag-data {
+          state: STATE-PAID,
+          payment-block: (some stacks-block-height),
+        })
+      )
+      ;; Update statistics
+      (increment-stat "tags-fulfilled")
+      ;; Emit fulfillment event
+      (print {
+        event: "payment-tag-fulfilled",
+        tag-id: tag-id,
+        payer: tx-sender,
+        recipient: (get recipient tag-data),
+        amount: (get amount tag-data),
+        payment-block: stacks-block-height,
+      })
+      (ok tag-id)
+    )
+  )
+)
+
+;; Cancel a payment tag (creator only)
+(define-public (cancel-payment-tag (tag-id uint))
+  (let ((tag-data (unwrap! (map-get? payment-tags { id: tag-id }) (err ERR-NOT-FOUND))))
+    (begin
+      ;; Input validation
+      (asserts! (> tag-id u0) (err ERR-INVALID-AMOUNT))
+      (asserts! (<= tag-id (var-get tag-counter)) (err ERR-NOT-FOUND))
+      ;; Authorization check
+      (asserts! (is-eq tx-sender (get creator tag-data)) (err ERR-UNAUTHORIZED))
+      ;; State validation
+      (asserts! (is-eq (get state tag-data) STATE-PENDING) (err ERR-NOT-PENDING))
+      ;; Update tag state
+      (map-set payment-tags { id: tag-id }
+        (merge tag-data { state: STATE-CANCELED })
+      )
+      ;; Update statistics
+      (increment-stat "tags-canceled")
+      ;; Emit cancellation event
+      (print {
+        event: "payment-tag-canceled",
+        tag-id: tag-id,
+        creator: tx-sender,
+      })
+      (ok tag-id)
+    )
+  )
+)
