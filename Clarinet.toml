@@ -4,7 +4,9 @@ description = ''
 authors = []
 telemetry = true
 cache_dir = './.cache'
-requirements = []
+
+[[project.requirements]]
+contract_id = 'ST1F7QA2MDF17S807EPA36TSS8AMEFY4KA9TVGWXT.sbtc-token'
 [contracts.paylink]
 path = 'contracts/paylink.clar'
 clarity_version = 3
